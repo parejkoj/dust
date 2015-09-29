@@ -5,7 +5,7 @@ import constants as c
 import cmindex as cmi
 
 ## Needed for PSH model
-from parse_PAH import *
+from parse_PAH import parse_PAH
 from scipy.interpolate import interp1d
 
 #------------- Scattering Models --------------------------
@@ -183,9 +183,9 @@ class Mie(object):
         # *** Logarithmic derivative D(J) calculated by downward recurrence
         # beginning with initial value (0.,0.) at J=NMX
 
-        d = np.zeros( shape=(nx,nmx+1), dtype='complex' )  
+        d = np.zeros( shape=(nx,nmx+1), dtype='complex' )
         dold = np.zeros( nmx+1, dtype='complex' )
-        # Original code set size to nmxx.  
+        # Original code set size to nmxx.
         # I see that the array only needs to be slightly larger than nmx
 
         for n in np.arange(nmx-1)+1:  # for n=1, nmx-1 do begin
@@ -225,7 +225,7 @@ class Mie(object):
             #              PSI1 = psi_{n-1}    CHI1 = chi_{n-1}
             #              PSI0 = psi_{n-2}    CHI0 = chi_{n-2}
             # Calculate psi_n and chi_n
-            # *** Compute AN and BN:                                                                     
+            # *** Compute AN and BN:
 
             #*** Store previous values of AN and BN for use
             #    in computation of g=<cos(theta)>
@@ -261,7 +261,7 @@ class Mie(object):
                 bn = bn / ( ( refrel*d[0,n] + en/x ) * xi - xi1 )
 
 
-            # *** Augment sums for Qsca and g=<cos(theta)>                                               
+            # *** Augment sums for Qsca and g=<cos(theta)>
  
             # NOTE from LIA: In IDL version, bhmie casts double(an)
             # and double(bn).  This disgards the imaginary part.  To
