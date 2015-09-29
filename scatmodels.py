@@ -8,6 +8,8 @@ import cmindex as cmi
 from parse_PAH import parse_PAH
 from scipy.interpolate import interp1d
 
+import scattering_utils
+
 #------------- Scattering Models --------------------------
 # Each model must contain Qsca and Diff functions
 #
@@ -120,6 +122,7 @@ class Mie(object):
 
     stype = 'Mie'
 
+    # @profile
     def getQs( self, a=1.0, E=1.0, cm=cmi.CmDrude(), getQ='sca', theta=None ):  # Takes single a and E argument
 
         if np.size(a) > 1:
@@ -127,7 +130,8 @@ class Mie(object):
             return
 
         indl90 = np.array([])  # Empty arrays indicate that there are no theta values set
-        indg90 = np.array([])  # Do not have to check if theta != None throughout calculation
+        indg90 = np.array([])
+          # Do not have to check if theta != None throughout calculation
         s1     = np.array([])
         s2     = np.array([])
         pi     = np.array([])
@@ -183,15 +187,7 @@ class Mie(object):
         # *** Logarithmic derivative D(J) calculated by downward recurrence
         # beginning with initial value (0.,0.) at J=NMX
 
-        d = np.zeros( shape=(nx,nmx+1), dtype='complex' )
-        dold = np.zeros( nmx+1, dtype='complex' )
-        # Original code set size to nmxx.
-        # I see that the array only needs to be slightly larger than nmx
-
-        for n in np.arange(nmx-1)+1:  # for n=1, nmx-1 do begin
-          en = nmx - n + 1
-          d[:,nmx-n]  = (en/y) - ( 1.0 / ( d[:,nmx-n+1]+en/y ) )
-
+        d = self.create_d(nx,nmx,y)
         
         # *** Riccati-Bessel functions with real argument X
         # calculated by upward recurrence
@@ -234,7 +230,7 @@ class Mie(object):
                 bn1 = bn
 
             if nx > 1:
-                ig  = np.where( nstop >= n )
+                ig  = nstop >= n
                 
                 psi    = np.zeros( nx )
                 chi    = np.zeros( nx )
@@ -245,11 +241,8 @@ class Mie(object):
 
                 an = np.zeros( nx, dtype='complex' )
                 bn = np.zeros( nx, dtype='complex' )
-
-                an[ig] = ( d[ig,n]/refrel[ig] + en/x[ig] ) * psi[ig] - psi1[ig]
-                an[ig] = an[ig] / ( ( d[ig,n]/refrel[ig] + en/x[ig] ) * xi[ig] - xi1[ig] )
-                bn[ig] = ( refrel[ig]*d[ig,n] + en / x[ig] ) * psi[ig] - psi1[ig]
-                bn[ig] = bn[ig] / ( ( refrel[ig]*d[ig,n] + en/x[ig] ) * xi[ig] - xi1[ig] )
+                an[ig], bn[ig] = scattering_utils.an_bn(d[ig,n],refrel[ig],en,x[ig],psi[ig],psi1[ig],xi[ig],xi1[ig])
+                # an[ig], bn[ig] = self.an_bn(d[ig,n],refrel[ig],en,x[ig],psi[ig],psi1[ig],xi[ig],xi1[ig])
             else:
                 psi = (2.0*en-1.0) * psi1/x - psi0
                 chi = (2.0*en-1.0) * chi1/x - chi0
@@ -271,12 +264,11 @@ class Mie(object):
             # real from imaginary parts, I replaced all instances of
             # double( foo * complex(0.d0,-1.d0) ) with foo.imag
 
-            qsca   = qsca + ( 2.0*en +1.0 ) * ( np.power(np.abs(an),2) + np.power(np.abs(bn),2) )
-            gsca   = gsca + ( ( 2.0*en+1.0 ) / ( en*(en+1.0) ) ) * ( an.real*bn.real + an.imag*bn.imag )
+            qsca += self.compute_qsca(en,an,bn)
+            gsca += self.compute_gsca(en,an,bn)
 
             if n > 1:
-                gsca    = gsca + ( (en-1.0) * (en+1.0)/en ) * \
-                    ( an1.real*an.real + an1.imag*an.imag + bn1.real*bn.real + bn1.imag*bn.imag )
+                gsca += self.update_gsca(en,an,an1,bn,bn1)
 
             # *** Now calculate scattering intensity pattern
             #     First do angles from 0 to 90
@@ -377,6 +369,30 @@ class Mie(object):
             return 0.5 * ( np.power( np.abs(s1), 2 ) + np.power( np.abs(s2), 2) ) / (np.pi * x*x)
         else:
             return 0.0
+
+    def create_d(self,nx,nmx,y):
+        d = np.zeros( shape=(nx,nmx+1), dtype='complex' )
+        # dold = np.zeros( nmx+1, dtype='complex' )
+        # Original code set size to nmxx.
+        # I see that the array only needs to be slightly larger than nmx
+        for n in np.arange(nmx-1)+1:  # for n=1, nmx-1 do begin
+            en = nmx - n + 1
+            d[:,nmx-n]  = (en/y) - ( 1.0 / ( d[:,en]+en/y ) )
+        return d
+
+    def an_bn(self,d,refrel,en,x,psi,psi1,xi,xi1):
+        a = (( d/refrel + en/x ) * psi - psi1) / ( ( d/refrel + en/x ) * xi - xi1 )
+        b = ( refrel*d + en/x ) * psi - psi1 / ( ( refrel*d + en/x ) * xi - xi1 )
+        return a,b
+
+    def compute_qsca(self,en,an,bn):
+        return (2.*en+1.) * ( np.abs(an)**2 + np.abs(bn)**2 )
+    def compute_gsca(self,en,an,bn):
+        return ( (2.*en+1.) / ( en*(en+1.0) ) ) * ( an.real*bn.real + an.imag*bn.imag )
+
+    def update_gsca(self,en,an,an1,bn,bn1):
+        return ( (en-1.0) * (en+1.0)/en ) * \
+            ( an1.real*an.real + an1.imag*an.imag + bn1.real*bn.real + bn1.imag*bn.imag )
 
 
     def Qsca( self, E, a=1.0, cm=cmi.CmDrude() ):
